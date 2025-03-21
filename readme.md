@@ -6,6 +6,9 @@ descrição detalhada de todas as funcionalidades do serviço.
 ---
 ### Download do Repositório:
 
+```bash
+git clone git@github.com:Gustavolskw/Auth_service-php.git
+```
 
 ---
 ### Ambiente:
