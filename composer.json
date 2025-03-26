@@ -1,31 +1,33 @@
 {
-    "name": "auth/service",
-    "description": "Microservice to authenticate users and registrate them on the database",
-    "type": "project",
-    "autoload": {
-        "psr-4": {
-            "Auth\\": "src/",
-            "Database\\Migrations\\": "migrations/"
-        }
-    },
-    "authors": [
-        {
-            "name": "Gustavolskw",
-            "email": "gustavolschmidt13@gmail.com"
-        }
-    ],
-    "require": {
-        "php": ">=8.0",
-        "php-amqplib/php-amqplib": "^3.5",
-        "illuminate/database": "^10.0",
-        "illuminate/validation": "^10.0",
-        "openswoole/core": "22.1.5",
-        "dompdf/dompdf": "^3.1",
-        "vlucas/phpdotenv": "^5.6",
-        "firebase/php-jwt": "^6.0"
-    },
-    "minimum-stability": "stable",
-    "scripts": {
-        "start": "php server.php"
+  "name": "auth/service",
+  "description": "Microservice to authenticate users and registrate them on the database",
+  "type": "project",
+  "autoload": {
+    "psr-4": {
+      "Auth\\": "src/",
+      "Database\\Migrations\\": "migrations/",
+      "Auth\\Translations\\": "src/Translations/"
     }
+  },
+  "authors": [
+    {
+      "name": "Gustavolskw",
+      "email": "gustavolschmidt13@gmail.com"
+    }
+  ],
+  "require": {
+    "php": ">=8.0",
+    "php-amqplib/php-amqplib": "^3.5",
+    "illuminate/database": "^10.0",
+    "illuminate/validation": "^10.0",
+    "openswoole/core": "22.1.5",
+    "dompdf/dompdf": "^3.1",
+    "vlucas/phpdotenv": "^5.6",
+    "firebase/php-jwt": "^6.0",
+    "predis/predis": "^2.0"
+  },
+  "minimum-stability": "stable",
+  "scripts": {
+    "start": "php server.php"
+  }
 }

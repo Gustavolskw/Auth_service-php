@@ -1,7 +1,7 @@
 <?php
 require_once 'vendor/autoload.php';
 
-use Auth\Service\Config\Database;
+use Auth\Config\Database;
 use Illuminate\Database\Capsule\Manager as Capsule;
 
 // Carregar o Eloquent

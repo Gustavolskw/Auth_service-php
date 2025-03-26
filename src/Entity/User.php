@@ -3,6 +3,15 @@ namespace Auth\Entity;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ *
+ * @property int $id
+ * @property string $name
+ * @property string $email
+ * @property string $password
+ * @mixin \Illuminate\Database\Eloquent\Model
+ * @package Auth\Entity
+ */
 class User extends Model
 {
     protected $table = 'users';

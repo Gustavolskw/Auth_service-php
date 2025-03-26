@@ -1,9 +1,10 @@
-Aqui está a documentação completa e atualizada do `AuthService` 
-com todos os componentes revisados, com 
-os comandos para gerar e rodar migrações, e uma 
+Aqui está a documentação completa e atualizada do `AuthService`
+com todos os componentes revisados, com
+os comandos para gerar e rodar migrações, e uma
 descrição detalhada de todas as funcionalidades do serviço.
 
 ---
+
 ### Download do Repositório:
 
 ```bash
@@ -11,11 +12,13 @@ git clone git@github.com:Gustavolskw/Auth_service-php.git
 ```
 
 ---
+
 ### Ambiente:
+
 **Em pode ser no mesmo ambiente ou em um ambiente separado da aplicação reliazar a criação dos seguintes Conâiners docker para ter a conexão com uma base de dados e uma mensageria:**
 
-
 docker-compose.yml
+
 ```dockerfile
 version: "4"
 
@@ -57,33 +60,41 @@ services:
 volumes:
   rabbitmq-data:
     driver: local
-    
+
 ```
+
 **Após a criação dos cainter executar os mesmos:**
 
 se for a primeira vez:
+
 ```bash
 docker compose up --build
 ```
+
 para iniciar a aplicação sem visualizar os logs
+
 ```bash
-docker compose up -d  
+docker compose up -d
 ```
 
 para iniciar a aplicação com a visualização dos logs
+
 ```bash
-docker compose up 
+docker compose up
 ```
 
 para finalizar a execução dos containers sem destruir os mesmos:
+
 ```bash
-docker compose up stop 
+docker compose up stop
 ```
 
 para derrubar ambos container:
+
 ```bash
-docker compose up down 
+docker compose up down
 ```
+
 ---
 
 ### **Documentação Completa do AuthService**
@@ -92,12 +103,12 @@ docker compose up down
 
 O `AuthService` é um microserviço projetado para:
 
-- Registrar usuários no banco de dados (`POST /register`) com validação de entradas.
+- Registrar usuários no banco de dados (`POST /register`) com validação robusta de entradas usando `illuminate/validation`.
 - Buscar um usuário específico por email (`GET /user`).
 - Buscar todos os usuários registrados (`GET /users`).
-- Proteger rotas com autenticação via JWT.
+- Proteger rotas específicas por método e URI com autenticação JWT.
 - Publicar eventos de registro no RabbitMQ para integração com outros serviços.
-- Usar o Eloquent como ORM e DTOs para controle de dados retornados ao cliente.
+- Usar o Eloquent como ORM, DTOs para controle de dados retornados e uma estrutura modular com controllers, serviços e roteamento avançado.
 
 #### **Estrutura do Projeto**
 
@@ -159,6 +170,7 @@ AuthService/
   ```
 
 1. **Copiar o arquivo .env-example e formar o .env**:
+
    ```bash
    cp .env.example .env
    ```
@@ -168,10 +180,12 @@ AuthService/
    openssl rand -base64 32
    ```
 
+---
+
 #### **2. `composer.json`**
 
 - **Descrição**: Define dependências e configurações de autoload.
-- **Funcionalidade**: Garante que todas as bibliotecas necessárias estejam disponíveis.
+- **Funcionalidade**: Garante que todas as bibliotecas necessárias estejam disponíveis e mapeia namespaces.
 - **Conteúdo**:
   ```json
   {
@@ -212,7 +226,7 @@ AuthService/
 #### **3. `src/Config/Database.php`**
 
 - **Descrição**: Configura a conexão com o banco de dados usando Eloquent.
-- **Funcionalidade**: Inicializa o Eloquent com base no `.env`.
+- **Funcionalidade**: Inicializa o Eloquent com base nas variáveis do `.env`.
 - **Conteúdo**:
 
   ```php
@@ -251,7 +265,7 @@ AuthService/
 #### **4. `src/Controllers/AuthController.php`**
 
 - **Descrição**: Processa requisições HTTP e valida entradas antes de chamar serviços.
-- **Funcionalidade**: Usa `illuminate/validation` para validar payloads e retorna respostas formatadas com DTOs.
+- **Funcionalidade**: Usa o validador do Laravel para `/register` e retorna DTOs formatados.
 - **Métodos**:
   - `register`: Valida e registra um usuário.
   - `getUser`: Busca um usuário por email.
@@ -268,6 +282,7 @@ AuthService/
   use Illuminate\Translation\Translator;
   use OpenSwoole\Http\Request;
   use OpenSwoole\Http\Response;
+  use Auth\DTO\UserDTO;
 
   class AuthController
   {
@@ -308,46 +323,48 @@ AuthService/
       }
 
       public function getUser(Request $request, Response $response): void
-      {
-          try {
-              $email = $request->get['email'] ?? null;
-              if (!$email) {
-                  throw new \Exception('Email é obrigatório');
-              }
+    {
+        try {
+            $email = $request->get['email'] ?? null;
+            if (!$email) {
+                throw new \Exception('Email é obrigatório');
+            }
 
-              $userDTO = $this->authService->getUserByEmail($email);
-              if (!$userDTO) {
-                  throw new \Exception('Usuário não encontrado');
-              }
-
-              $response->header('Content-Type', 'application/json');
-              $response->end(json_encode($userDTO->toArray()));
-          } catch (\Exception $e) {
-              $response->status(404);
-              $response->header('Content-Type', 'application/json');
-              $response->end(json_encode(['error' => $e->getMessage()]));
-          }
-      }
+            $userData = $this->authService->getUserByEmail($email);
+            if (!$userData) {
+                throw new \Exception('Usuário não encontrado');
+            }
+            $userDTO = UserDTO::fromArray($userData);
+            $response->header('Content-Type', 'application/json');
+            $response->end(json_encode($userDTO->toArray()));
+        } catch (\Exception $e) {
+            $response->status(404);
+            $response->header('Content-Type', 'application/json');
+            $response->end(json_encode(['error' => $e->getMessage()]));
+        }
+    }
 
       public function getAllUsers(Request $request, Response $response): void
-      {
-          try {
-              $userDTOs = $this->authService->getAllUsers();
-              $response->header('Content-Type', 'application/json');
-              $response->end(json_encode(array_map(fn($dto) => $dto->toArray(), $userDTOs)));
-          } catch (\Exception $e) {
-              $response->status(500);
-              $response->header('Content-Type', 'application/json');
-              $response->end(json_encode(['error' => $e->getMessage()]));
-          }
-      }
+    {
+        try {
+            $users = $this->authService->getAllUsers();
+            $userDTOs = array_map(fn($user) => UserDTO::fromArray($user), $users);
+
+            $response->header('Content-Type', 'application/json');
+            $response->end(json_encode(array_map(fn($dto) => $dto->toArray(), $userDTOs)));
+        } catch (\Exception $e) {
+            $response->status(500);
+            $response->header('Content-Type', 'application/json');
+            $response->end(json_encode(['error' => $e->getMessage()]));
+        }
+    }
   }
   ```
 
 #### **5. `src/DTO/UserDTO.php`**
 
 - **Descrição**: Define o formato dos dados retornados ao cliente.
-- **Funcionalidade**: Controla os campos expostos, evitando vazamento de dados sensíveis.
+- **Funcionalidade**: Controla quais campos do `User` são expostos.
 - **Conteúdo**:
 
   ```php
@@ -378,7 +395,11 @@ AuthService/
 
       public static function fromArray(array $data): self
       {
-          return new self($data['id'], $data['name'], $data['email']);
+          return new self(
+              $data['id'],
+              $data['name'],
+              $data['email']
+          );
       }
   }
   ```
@@ -386,7 +407,7 @@ AuthService/
 #### **6. `src/Entity/User.php`**
 
 - **Descrição**: Modelo Eloquent para a tabela `users`.
-- **Funcionalidade**: Define a entidade do banco e o hashing da senha.
+- **Funcionalidade**: Representa a entidade no banco e criptografa a senha.
 - **Conteúdo**:
 
   ```php
@@ -410,8 +431,8 @@ AuthService/
 
 #### **7. `src/Message/RabbitMQProducer.php`**
 
-- **Descrição**: Publica mensagens no RabbitMQ.
-- **Funcionalidade**: Envia eventos como `user_registered` para a fila.
+- **Descrição**: Classe para publicar mensagens no RabbitMQ.
+- **Funcionalidade**: Envia eventos para a fila configurada.
 - **Conteúdo**:
 
   ```php
@@ -457,8 +478,8 @@ AuthService/
 
 #### **8. `src/Router/Routes.php`**
 
-- **Descrição**: Define e roteia requisições HTTP.
-- **Funcionalidade**: Mapeia URIs para métodos do controller e aplica autenticação JWT.
+- **Descrição**: Define e roteia requisições HTTP com proteção granular.
+- **Funcionalidade**: Mapeia URIs para métodos do `AuthController`, protege rotas por método e URI com JWT e suporta parâmetros dinâmicos.
 - **Conteúdo**:
 
   ```php
@@ -483,7 +504,8 @@ AuthService/
           $token = $matches[1];
           try {
               $key = new Key($_ENV['JWT_SECRET'], 'HS256');
-              JWT::decode($token, $key);
+              $decoded = JWT::decode($token, $key);
+              $request->user_id = $decoded->sub;
               return true;
           } catch (\Exception $e) {
               return false;
@@ -505,32 +527,52 @@ AuthService/
               ],
           ];
 
-          $protectedRoutes = ['/user', '/users'];
+          $protectedRoutes = [
+              ['method' => 'GET', 'uri' => '/user'],
+              ['method' => 'GET', 'uri' => '/users'],
+          ];
 
-          if (isset($routes[$method][$uri])) {
-              [$controllerClass, $methodName] = $routes[$method][$uri];
+          $requiresAuth = false;
+          foreach ($protectedRoutes as $protected) {
+              $routePattern = preg_replace('/\{([^}]+)\}/', '([^/]+)', $protected['uri']);
+              if ($method === $protected['method'] && preg_match("#^$routePattern$#", $uri)) {
+                  $requiresAuth = true;
+                  break;
+              }
+          }
 
-              if (in_array($uri, $protectedRoutes) && !$this->validateToken($request)) {
-                  $response->status(401);
-                  $response->header('Content-Type', 'application/json');
-                  $response->end(json_encode(['error' => 'Unauthorized']));
+          if ($requiresAuth && !$this->validateToken($request)) {
+              $response->status(401);
+              $response->header('Content-Type', 'application/json');
+              $response->end(json_encode(['error' => 'Token inválido ou expirado']));
+              return;
+          }
+
+          $params = [];
+          foreach ($routes[$method] ?? [] as $route => $handler) {
+              $routePattern = preg_replace('/\{([^}]+)\}/', '([^/]+)', $route);
+              if (preg_match("#^$routePattern$#", $uri, $matches)) {
+                  if (count($matches) > 1) {
+                      array_shift($matches);
+                      $params = $matches;
+                  }
+                  [$controllerClass, $methodName] = $handler;
+                  $controller = new $controllerClass();
+                  $controller->$methodName($request, $response, ...$params);
                   return;
               }
-
-              $controller = new $controllerClass();
-              $controller->$methodName($request, $response);
-          } else {
-              $response->status(404);
-              $response->header('Content-Type', 'application/json');
-              $response->end(json_encode(['error' => 'Rota não encontrada']));
           }
+
+          $response->status(404);
+          $response->header('Content-Type', 'application/json');
+          $response->end(json_encode(['error' => 'Rota não encontrada']));
       }
   }
   ```
 
 #### **9. `src/Services/AuthService.php`**
 
-- **Descrição**: Contém a lógica de negócios.
+- **Descrição**: Contém a lógica de negócios do serviço.
 - **Funcionalidade**: Gerencia registro e busca de usuários, retornando DTOs.
 - **Métodos**:
   - `register`: Registra um usuário e retorna token JWT.
@@ -594,20 +636,19 @@ AuthService/
           ];
       }
 
-      public function getUserByEmail(string $email): ?UserDTO
-      {
-          $user = User::where('email', $email)->first();
-          if (!$user) {
-              return null;
-          }
-          return new UserDTO($user->id, $user->name, $user->email);
-      }
+      public function getUserByEmail(string $email): ?array
+    {
+        $user = User::where('email', $email)->first();
+        if (!$user) {
+            return null;
+        }
+        return $user->toArray();
+    }
 
-      public function getAllUsers(): array
-      {
-          $users = User::all()->toArray();
-          return array_map(fn($user) => UserDTO::fromArray($user), $users);
-      }
+    public function getAllUsers(): array
+    {
+        return User::all()->toArray();
+    }
   }
   ```
 
@@ -775,14 +816,14 @@ AuthService/
 
 ### **Comandos para Migrações**
 
-#### **Gerar uma Migração**
+#### **Gerar uma Nova Migração**
 
 - **Comando**:
   ```bash
   php generate_migration.php
   ```
 - **Resultado**: Gera um arquivo como `migrations/Migration_002_22_03_2025.php`.
-- **Passo seguinte**: Edite o arquivo gerado para definir a estrutura da tabela.
+- **Ação**: Edite o arquivo gerado para definir a estrutura da tabela.
 
 #### **Executar uma Migração**
 
@@ -803,7 +844,7 @@ AuthService/
   mysql -h localhost -P 3307 -u root -p
   ```
   - Senha: `mysql`
-- Use o banco:
+- Use o banco e veja as tabelas:
   ```sql
   USE AUTH_SERVICE;
   SHOW TABLES;
@@ -816,13 +857,13 @@ AuthService/
 
 #### **POST /register**
 
-- **Descrição**: Registra um novo usuário com validação de entrada.
-- **Acesso**: Público.
+- **Descrição**: Registra um novo usuário com validação de entradas.
+- **Acesso**: Público (não protegido por JWT).
 - **Parâmetros**: `{"name": "string", "email": "string", "password": "string"}`
 - **Validação**:
-  - `name`: Obrigatório, string, máx. 255 caracteres.
-  - `email`: Obrigatório, email válido, máx. 255 caracteres.
-  - `password`: Obrigatório, string, mín. 6 e máx. 255 caracteres.
+  - `name`: Obrigatório, string, máximo 255 caracteres.
+  - `email`: Obrigatório, email válido, máximo 255 caracteres.
+  - `password`: Obrigatório, string, mínimo 6 e máximo 255 caracteres.
 - **Resposta**:
   - Sucesso (200): `{"message": "User registered successfully", "user_id": int, "token": "string"}`
   - Erro (400): `{"error": "mensagem"}` (ex.: "The name field is required, The email must be a valid email address")
@@ -830,16 +871,21 @@ AuthService/
   ```bash
   curl -X POST -H "Content-Type: application/json" -d '{"name":"João","email":"joao@example.com","password":"123456"}' http://localhost:9501/register
   ```
+  - Erro (payload inválido):
+    ```bash
+    curl -X POST -H "Content-Type: application/json" -d '{"name":"","email":"invalid","password":"123"}' http://localhost:9501/register
+    ```
+    Resposta: `{"error":"The name field is required, The email must be a valid email address, The password must be at least 6 characters"}`
 
 #### **GET /user**
 
 - **Descrição**: Busca um usuário por email.
-- **Acesso**: Protegido por JWT (`Authorization: Bearer <token>`).
+- **Acesso**: Protegido por JWT (header `Authorization: Bearer <token>`).
 - **Parâmetros**: `email` (query string).
 - **Resposta**:
   - Sucesso (200): `{"id": int, "name": "string", "email": "string"}`
   - Erro (404): `{"error": "Usuário não encontrado"}`
-  - Erro (401): `{"error": "Unauthorized"}`
+  - Erro (401): `{"error": "Token inválido ou expirado"}`
 - **Exemplo**:
   ```bash
   curl -X GET -H "Authorization: Bearer <token>" "http://localhost:9501/user?email=joao@example.com"
@@ -848,11 +894,11 @@ AuthService/
 #### **GET /users**
 
 - **Descrição**: Retorna todos os usuários registrados.
-- **Acesso**: Protegido por JWT (`Authorization: Bearer <token>`).
+- **Acesso**: Protegido por JWT (header `Authorization: Bearer cidade <token>`).
 - **Resposta**:
   - Sucesso (200): `[ {"id": int, "name": "string", "email": "string"}, ... ]`
   - Erro (500): `{"error": "mensagem"}`
-  - Erro (401): `{"error": "Unauthorized"}`
+  - Erro (401): `{"error": "Token inválido ou expirado"}`
 - **Exemplo**:
   ```bash
   curl -X GET -H "Authorization: Bearer <token>" "http://localhost:9501/users"
@@ -867,33 +913,29 @@ AuthService/
    composer install
    ```
 2. **Configure o Banco**:
-   - Gere a migração: `php generate_migration.php`
-   - Execute: `php run_migration.php Migration_001_21_03_2025`
+
+- Gere a migração (se necessário): `php generate_migration.php`
+- Execute a migração inicial: `php run_migration.php Migration_001_21_03_2025`
+
 3. **Inicie o Servidor**:
    ```bash
    php server.php
    ```
 4. **Teste os Endpoints**:
-   - Use os exemplos acima com `curl`.
 
----
-
-### **Funcionalidades**
-
-- **Registro de Usuários**: Validação robusta de entradas antes do cadastro.
-- **Autenticação**: Uso de JWT para proteger rotas sensíveis.
-- **Busca de Dados**: Retorno controlado via DTOs, expondo apenas `id`, `name` e `email`.
-- **Integração**: Publicação de eventos no RabbitMQ para comunicação assíncrona.
-- **Migrações**: Sistema de criação e aplicação de migrações para gerenciar o banco.
+- Use os exemplos acima com `curl`.
 
 ---
 
 ### **Notas**
 
+- **Proteção de Rotas**: A proteção agora é granular, definida por método e URI em `$protectedRoutes`, com suporte a parâmetros dinâmicos para expansão futura.
+- **DTOs**: Garantem que apenas dados necessários sejam retornados, protegendo informações sensíveis (ex.: `password`).
+- **Escalabilidade**: A estrutura permite adicionar novos endpoints e regras de proteção facilmente.
+- **Segurança**: JWT e validação robusta protegem contra acessos não autorizados e entradas inválidas.
 - **Validação**: O uso de `illuminate/validation` no `AuthController` substitui parcialmente a validação do `respect/validation` no `AuthService`, mas ambas coexistem para camadas diferentes.
-- **Escalabilidade**: A estrutura permite adicionar novos endpoints, controllers e DTOs facilmente.
 - **Segurança**: O `JWT_SECRET` deve ser único e seguro (gere com `openssl rand -base64 32`).
 
-----
+---
 
-#### Feito por Gustavo Luis Schmidt, GitHub: Gustavolskw, se posisvel deixar um Star no repositório pra ajudar na criação de mais templates de projetos PHP com OpenSwoole! 
+#### Feito por Gustavo Luis Schmidt, GitHub: Gustavolskw, se posisvel deixar um Star no repositório pra ajudar na criação de mais templates de projetos PHP com OpenSwoole!
