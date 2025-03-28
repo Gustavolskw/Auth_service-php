@@ -1,14 +1,15 @@
 <?php
+
 namespace Auth\Message;
 
 use PhpAmqpLib\Connection\AMQPStreamConnection;
 use PhpAmqpLib\Message\AMQPMessage;
 
-class RabbitMQProducer
+
+class FanoutExchangeProducer
 {
-    private $connection;
     private $channel;
-    private $queue;
+    private $connection;
 
     public function __construct()
     {
@@ -19,15 +20,20 @@ class RabbitMQProducer
             $_ENV['RABBITMQ_PASS'],
             $_ENV['RABBITMQ_VHOST']
         );
+
         $this->channel = $this->connection->channel();
-        $this->queue = $_ENV['RABBITMQ_QUEUE'];
-        $this->channel->queue_declare($this->queue, false, true, false, false);
     }
 
-    public function publish(string $message): void
+    public function publish(string $exchange, array $payload): void
     {
-        $msg = new AMQPMessage($message, ['delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT]);
-        $this->channel->basic_publish($msg, '', $this->queue);
+        $this->channel->exchange_declare($exchange, 'fanout', false, true, false);
+
+        $message = new AMQPMessage(json_encode($payload), [
+            'delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT,
+            'content_type' => 'application/json'
+        ]);
+
+        $this->channel->basic_publish($message, $exchange);
     }
 
     public function __destruct()

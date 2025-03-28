@@ -1,7 +1,7 @@
 <?php
 require_once 'vendor/autoload.php';
 
-use Auth\Service\Config\Database;
+use Auth\Config\Database;
 
 if ($argc < 2) {
     echo "Uso: php run_migration.php <nome_da_migracao>\n";

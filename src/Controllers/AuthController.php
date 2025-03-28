@@ -1,19 +1,25 @@
 <?php
 namespace Auth\Controllers;
 
+use Auth\Entity\User;
 use Auth\Services\AuthService;
-use Auth\DTO\UserDTO;
 use Auth\Translations\ValidationMessages;
+use Exception;
 use Illuminate\Validation\Factory as ValidationFactory;
 use Illuminate\Translation\ArrayLoader;
 use Illuminate\Translation\Translator;
 use OpenSwoole\Http\Request;
 use OpenSwoole\Http\Response;
+use Auth\DTO\HttpResponse;
+
 
 class AuthController
 {
     private $authService;
     private $validator;
+
+    private $resp;
+
 
     public function __construct()
     {
@@ -21,6 +27,8 @@ class AuthController
         $loader = new ArrayLoader();
         $translator = new Translator($loader, 'en');
         $this->validator = new ValidationFactory($translator);
+        $this->resp = new HttpResponse();
+
     }
 
     public function login(Request $request, Response $response): void
@@ -34,28 +42,22 @@ class AuthController
 
             $validation = $this->validator->make($data, $rules, ValidationMessages::getMessages());
             if ($validation->fails()) {
-                $response->status(422);
-                $response->header('Content-Type', 'application/json');
-                $response->end(json_encode(['error' => $validation->errors()->all()]));
+                $this->resp->response(['error' => $validation->errors()->all()], 422, $response);
                 return;
             }
 
-            $result = $this->authService->loginUser($data['email'], $data['password']);
+            $valData = $validation->validated();
+
+            $result = $this->authService->loginUser($valData['email'], $valData['password']);
 
             if ($result['status'] === 401) {
-                $response->status(401);
-                $response->header('Content-Type', 'application/json');
-                $response->end(json_encode(['error' => $result['message']]));
+                $this->resp->response(['error' => $result['message']], 401, $response);
                 return;
             }
 
-            $response->status(200);
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode($result));
-        } catch (\Exception $e) {
-            $response->status(500);
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode(['error' => $e->getMessage()]));
+            $this->resp->response($result, 200, $response);
+        } catch (Exception $e) {
+            $this->resp->exceptionResponse($e, $response);
         }
     }
 
@@ -67,103 +69,163 @@ class AuthController
                 'name' => 'required|string|max:255',
                 'email' => 'required|email|max:255',
                 'password' => 'required|string|min:6|max:255',
+                'role' => 'sometimes|in:1,2',
             ];
 
             $validation = $this->validator->make($data, $rules, ValidationMessages::getMessages());
             if ($validation->fails()) {
-                $response->status(422);
-                $response->header('Content-Type', 'application/json');
-                $response->end(json_encode(['error' => $validation->errors()->all()]));
+                $this->resp->response(['error' => $validation->errors()->all()], 422, $response);
                 return;
             }
 
-            $result = $this->authService->register($data['name'], $data['email'], $data['password']);
-            $response->status(201); // 201 para recurso criado
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode($result));
-        } catch (\Exception $e) {
-            $response->status(400);
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode(['error' => $e->getMessage()]));
+            $valData = $validation->validated();
+
+
+            $role = $valData['role'] ?? User::ROLE_USER;
+            $result = $this->authService->register($valData['name'], $valData['email'], $valData['password'], (int) $role);
+
+            $this->resp->response($result, 201, $response);
+
+        } catch (Exception $e) {
+            $this->resp->exceptionResponse($e, $response);
         }
     }
 
     public function getUser(Request $request, Response $response): void
     {
         try {
-            $email = $request->get['email'] ?? null;
-            if (!$email) {
-                throw new \Exception('Email é obrigatório');
+            $data = json_decode($request->getContent(), true) ?? [];
+            $rules = [
+                'email' => 'required|email|max:255',
+            ];
+
+            $validation = $this->validator->make($data, $rules, ValidationMessages::getMessages());
+            if ($validation->fails()) {
+                $this->resp->response(['error' => $validation->errors()->all()], 422, $response);
+                return;
+            }
+            $valData = $validation->validated();
+
+            $result = $this->authService->getUserByEmail($valData['email']);
+
+            if ($result['status'] == 404) {
+                $this->resp->response(['error' => $result['message']], $result['status'], $response);
+                return;
             }
 
-            $userData = $this->authService->getUserByEmail($email);
-            if (!$userData) {
-                throw new \Exception('Usuário não encontrado');
-            }
-            $userDTO = UserDTO::fromArray($userData);
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode($userDTO->toArray()));
-        } catch (\Exception $e) {
-            $response->status(404);
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode(['error' => $e->getMessage()]));
+            $this->resp->response($result, 200, $response);
+
+        } catch (Exception $e) {
+            $this->resp->exceptionResponse($e, $response);
         }
     }
 
     public function getAllUsers(Request $request, Response $response): void
     {
         try {
-            $users = $this->authService->getAllUsers();
-            $userDTOs = array_map(fn($user) => UserDTO::fromArray($user), $users);
+            $result = $this->authService->getAllUsers();
+            if ($result['status'] != 200) {
+                $this->resp->response(['error' => $result['message']], $result['status'], $response);
+            }
 
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode(array_map(fn($dto) => $dto->toArray(), $userDTOs)));
-        } catch (\Exception $e) {
-            $response->status(500);
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode(['error' => $e->getMessage()]));
+            $this->resp->response($result, 200, $response);
+        } catch (Exception $e) {
+            $this->resp->exceptionResponse($e, $response);
         }
     }
 
-    public function update(Request $request, Response $response)
+    public function update(Request $request, Response $response, int $id)
     {
-        $data = json_decode($request->getContent(), true) ?? [];
-        $rules = [
-            'email' => 'required|email|max:255',
-            'name'=> 'required|string|max:255',
-            'password' => 'required|string|min:6|max:255',
-        ];
-        $validation = $this->validator->make($data, $rules, ValidationMessages::getMessages());
+        try {
+            $data = json_decode($request->getContent(), true) ?? [];
+            $data += ['id' => $id]; // Ensure 'id' is present in the data
 
-        if ($validation->fails()) {
-            $response->status(422);
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode(['error' => $validation->errors()->all()]));
-        }
+            $rules = [
+                'name' => 'sometimes|string|max:255',
+                'email' => 'sometimes|email|max:255',
+                'password' => 'sometimes|string|min:6|max:255',
+                'role' => 'sometimes|in:1,2',
+                'status' => 'sometimes|boolean',
+                'id' => 'required|integer',
+            ];
 
-        try{
+            $validation = $this->validator->make($data, $rules, ValidationMessages::getMessages());
+
+            if ($validation->fails()) {
+                $this->resp->response(['error' => $validation->errors()->all()], 422, $response);
+                return;
+            }
+
+            $valData = $validation->validated();
+
+
             $authHeader = $request->header['authorization'] ?? '';
             $token = str_replace('Bearer ', '', $authHeader);
 
-            $result = $this->authService->updateUser($token, $data['name'], $data['email'], $data['password']);
-            if($result['status'] === 422){
-                $response->status($result['status']);
-                $response->header('Content-Type', 'application/json');
-                $response->end(json_encode(['error' => $result['message']]));
+            $role = $valData['role'] ?? User::ROLE_USER;
+            $name = $valData['name'] ?? null;
+            $email = $valData['email'] ?? null;
+            $password = $valData['password'] ?? null;
+            $status = $valData['status'] ?? null;
+
+            $result = $this->authService->updateUser($token, $id, $name, $email, $password, (int) $role, $status);
+
+            if ($result['status'] != 200) {
+                $this->resp->response(['error' => $result['message']], $result['status'], $response);
                 return;
             }
-            $response->status(200);
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode($result));
+
+            $this->resp->response($result, 200, $response);
+        } catch (Exception $e) {
+            $this->resp->exceptionResponse($e, $response);
         }
-        catch(\Exception $e){
-            $response->status(400);
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode(['error' => $e->getMessage(),
-                'code' => $e->getCode(),
-                'file'=> $e->getFile()]));
-        }
+    }
 
 
+    public function remove(Request $request, Response $response, int $id)
+    {
+
+        try {
+            $data = json_decode($request->getContent(), true) ?? [];
+            $data = ['id' => $id];
+            $rules = [
+                'id' => 'required|integer',
+            ];
+            $validation = $this->validator->make($data, $rules, ValidationMessages::getMessages());
+
+            if ($validation->fails()) {
+                $this->resp->response(['error' => $validation->errors()->all()], 422, $response);
+            }
+            $valData = $validation->validated();
+
+            $authHeader = $request->header['authorization'] ?? '';
+            $token = str_replace('Bearer ', '', $authHeader);
+
+            $result = $this->authService->removeUser($valData['id'], $token);
+            $this->resp->response($result, 200, $response);
+        } catch (Exception $e) {
+            $this->resp->exceptionResponse($e, $response);
+        }
+    }
+
+    public function verifyUser(Request $request, Response $response, int $id)
+    {
+        try {
+            $data = ['id' => $id];
+            $rules = [
+                'id' => 'required|integer',
+                'email' => 'required|email|max:255',
+            ];
+            $validation = $this->validator->make($data, $rules, ValidationMessages::getMessages());
+
+            if ($validation->fails()) {
+                $this->resp->response(['error' => $validation->errors()->all()], 422, $response);
+            }
+            $valData = $validation->validated();
+            $result = $this->authService->verifyUser($valData['id'], $valData['email']);
+            $this->resp->response($result, 200, $response);
+        } catch (Exception $e) {
+            $this->resp->exceptionResponse($e, $response);
+        }
     }
 }

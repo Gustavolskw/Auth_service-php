@@ -13,6 +13,8 @@ class Migration_001_21_03_2025
             $table->string('name', 255);
             $table->string('email', 255)->unique();
             $table->string('password', 255);
+            $table->integer('role')->default(1);
+            $table->boolean('status')->default(true);
         });
     }
 

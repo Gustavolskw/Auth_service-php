@@ -2,19 +2,23 @@
 namespace Auth\Router;
 
 use Auth\Controllers\AuthController;
-use Firebase\JWT\JWT;
-use Firebase\JWT\Key;
+use Auth\DTO\HttpResponse;
+use Auth\Entity\User;
+use Auth\JWT\UtilJwt;
 use OpenSwoole\Http\Request;
 use OpenSwoole\Http\Response;
 
-
-
-
 class Routes
 {
-    /**
-     * Valida o token JWT e adiciona informações ao request
-     */
+
+    private $utilJwt;
+    private $httpResponse;
+
+    public function __construct()
+    {
+        $this->utilJwt = new UtilJwt();
+        $this->httpResponse = new HttpResponse();
+    }
     private function validateToken(Request $request): bool
     {
         $authHeader = $request->header['authorization'] ?? '';
@@ -24,18 +28,31 @@ class Routes
 
         $token = $matches[1];
         try {
-            $key = new Key($_ENV['JWT_SECRET'], 'HS256');
-            $decoded = JWT::decode($token, $key);
+            $decoded = $this->utilJwt->decodeJwt($token);
             $request->user_id = $decoded->sub;
             return true;
+        } catch (\Exception $e) {
+            error_log($e->getMessage());
+            return false;
+        }
+    }
+
+    private function validateAcessToRoute(Request $request, int $requiredRole): bool
+    {
+        $authHeader = $request->header['authorization'] ?? '';
+        if (!$authHeader || !preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
+            return false;
+        }
+        $token = $matches[1];
+        try {
+            $decoded = $this->utilJwt->decodeJwt($token);
+            $role = $decoded->role ?? null;
+            return $role >= $requiredRole;
         } catch (\Exception $e) {
             return false;
         }
     }
 
-    /**
-     * Executa a lógica de roteamento
-     */
     public function handle(Request $request, Response $response): void
     {
         $uri = rtrim($request->server['request_uri'] ?? '/', '/');
@@ -44,46 +61,51 @@ class Routes
         $routes = [
             'GET' => [
                 '/user' => [AuthController::class, 'getUser'],
-                '/users' => [AuthController::class, 'getAllUsers']
+                '/user/{id}' => [AuthController::class, 'getUserById'],
+                '/users' => [AuthController::class, 'getAllUsers'],
+                '/user/verify/{id}' => [AuthController::class, 'verifyUser']
             ],
             'POST' => [
                 '/register' => [AuthController::class, 'register'],
                 '/login' => [AuthController::class, 'login'],
             ],
             'PUT' => [
-                '/user' => [AuthController::class, 'update'],
+                '/user/{id}' => [AuthController::class, 'update'],
             ],
             'DELETE' => [
-                '/user' => [AuthController::class, 'remove'],
+                '/user/{id}' => [AuthController::class, 'remove'],
             ],
         ];
-
-        // Rotas protegidas (método e URI)
         $protectedRoutes = [
-            ['method' => 'GET', 'uri' => '/user'],
-            ['method' => 'PUT', 'uri' => '/user'], // Inclui o padrão dinâmico
-            ['method' => 'DELETE', 'uri' => '/user'],
+            ['method' => 'GET', 'uri' => '/user', 'role' => User::ROLE_USER],
+            ['method' => 'GET', 'uri' => '/user/{id}', 'role' => User::ROLE_ADMIN],
+            ['method' => 'GET', 'uri' => '/users', 'role' => User::ROLE_ADMIN],
+            ['method' => 'PUT', 'uri' => '/user/{id}', 'role' => User::ROLE_USER],
+            ['method' => 'DELETE', 'uri' => '/user/{id}', 'role' => User::ROLE_USER],
         ];
 
-        // Verifica se a rota atual requer autenticação
         $requiresAuth = false;
+        $requiredRole = null;
         foreach ($protectedRoutes as $protected) {
             $routePattern = preg_replace('/\{([^}]+)\}/', '([^/]+)', $protected['uri']);
             if ($method === $protected['method'] && preg_match("#^$routePattern$#", $uri)) {
                 $requiresAuth = true;
+                $requiredRole = $protected['role'];
                 break;
             }
         }
 
-        // Aplica validação de token para rotas protegidas
-        if ($requiresAuth && !$this->validateToken($request)) {
-            $response->status(401);
-            $response->header('Content-Type', 'application/json');
-            $response->end(json_encode(['error' => 'Token inválido ou expirado']));
-            return;
+        if ($requiresAuth) {
+            if (!$this->validateToken($request)) {
+                $this->httpResponse->response(['error' => 'Token inválido ou expirado'], 401, $response);
+                return;
+            }
+            if (!$this->validateAcessToRoute($request, $requiredRole)) {
+                $this->httpResponse->response(['error' => 'Acesso negado: cargo insuficiente'], 403, $response);
+                return;
+            }
         }
 
-        // Processa as rotas
         $params = [];
         foreach ($routes[$method] ?? [] as $route => $handler) {
             $routePattern = preg_replace('/\{([^}]+)\}/', '([^/]+)', $route);
@@ -94,13 +116,12 @@ class Routes
                 }
                 [$controllerClass, $methodName] = $handler;
                 $controller = new $controllerClass();
-                $controller->$methodName($request, $response, ...$params); // Passa os parâmetros
+                $controller->$methodName($request, $response, ...$params);
                 return;
             }
         }
 
-        $response->status(404);
-        $response->header('Content-Type', 'application/json');
-        $response->end(json_encode(['error' => 'Rota não encontrada']));
+
+        $this->httpResponse->response(['error' => 'Rota não encontrada'], 404, $response);
     }
 }
