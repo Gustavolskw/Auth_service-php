@@ -155,9 +155,9 @@ class AuthService
         }
 
         if ($decoded->role >= User::ROLE_ADMIN) {
-            $user = User::find($id);
+            $user = User::where("id", "=", $id)->first();
         } elseif ($userId == $id) {
-            $user = User::find($userId);
+            $user = User::where("id", "=", $userId)->first();
         } else {
             return $this->generateResponse("Action not allowed", 403);
         }
@@ -177,6 +177,10 @@ class AuthService
         }
         $user->status = $status ?? $user->status;
 
+        if (isset($status) && boolval($user->status)) {
+            $this->rabbitMQFanOutExge->publish($_ENV['RABBITMQ_FAN_OUT_EXCHANGE_REACT'], ['userId' => $user->id]);
+        }
+
         $user->save();
 
         $this->cleanUserCache();
@@ -189,33 +193,42 @@ class AuthService
 
             $this->redisService->setToken($token, 3600, $user);
 
-            return $this->generateResponse('User updated successfully', 200, UserDTO::fromArray($user)->toArray(), $tokenNew);
+            return $this->generateResponse('User updated successfully', 200, UserDTO::fromArray($user->toArray())->toArray(), $tokenNew);
         }
-        return $this->generateResponse('User updated successfully', 200, UserDTO::fromArray($user)->toArray());
+        return $this->generateResponse('User updated successfully', 200, UserDTO::fromArray($user->toArray())->toArray());
 
     }
 
 
-    public function removeUser(int $userId, string $token)
+    public function removeUser(int $id, string $token)
     {
 
         $decoded = $this->utilJwt->decodeJwt($token);
         $decodedId = $decoded->sub;
         $decodedRole = $decoded->role;
 
-        if ($decodedId == $userId) {
-            $user = User::find($decodedId)->first();
+        echo "$decodedId e o id vindo do request $id \n";
+
+        if ($decodedId == $id) {
+            $userFound = User::where('id', '=', $decodedId)->first();
+
             $message = "Funcoes desativadas, mas accesso mantido ate a validade da sua sessao";
-        } else if ($decodedRole == User::ROLE_ADMIN && $decodedId != $userId) {
-            $user = User::find($userId)->first();
+        } else if ($decodedRole == User::ROLE_ADMIN && $decodedId != $id) {
+
+            $userFound = User::where('id', '=', $id)->first();
             $message = "Funcoes desativadas, mas accesso mantido ate a validade da sessao do usuario";
         } else {
             return $this->generateResponse("Action not allowed", 403);
         }
-        $user->status = false;
-        $user->save();
 
-        $this->rabbitMQFanOutExge->publish($_ENV['RABBITMQ_FAN_OUT_EXCHANGE'], ['userId' => $user->id]);
+        if ($userFound->status == false) {
+            return $this->generateResponse("Usuario ja Inativado!", 200);
+        }
+
+        $userFound->status = false;
+        $userFound->save();
+
+        $this->rabbitMQFanOutExge->publish($_ENV['RABBITMQ_FAN_OUT_EXCHANGE_INACT'], ['userId' => $userFound->id]);
 
         $this->cleanUserCache();
         return $this->generateResponse("Usuario Inativado com Sucesso!", 200, ["message" => $message]);
@@ -226,6 +239,8 @@ class AuthService
     {
         $user = User::where('id', "=", $id)->where('email', "LIKE", $email)->first();
         if ($user == null) {
+            return false;
+        } else if (boolval($user->status) == false) {
             return false;
         }
         return true;

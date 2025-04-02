@@ -211,7 +211,11 @@ class AuthController
     public function verifyUser(Request $request, Response $response, int $id)
     {
         try {
-            $data = ['id' => $id];
+
+            $email = $request->get['email'] ?? null;
+
+
+            $data = ['id' => $id, 'email' => $email];
             $rules = [
                 'id' => 'required|integer',
                 'email' => 'required|email|max:255',
