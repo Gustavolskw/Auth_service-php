@@ -11,9 +11,11 @@ class Database
         $dotenv = Dotenv::createImmutable(__DIR__ . '/../../');
         $dotenv->load();
 
+        echo "DRIVER" . $_ENV['DB_DRIVER'];
+
         $capsule = new Capsule;
         $capsule->addConnection([
-            'driver' => $_ENV['DB_DRIVER'],
+            'driver' => "mysql",
             'host' => $_ENV['DB_HOST'],
             'port' => $_ENV['DB_PORT'],
             'database' => $_ENV['DB_NAME'],
